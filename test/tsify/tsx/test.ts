@@ -9,7 +9,9 @@ tape('tsify', (test) => {
               entries: ['test/tsify/tsx/main.ts']
             },
             tsifyOptions: {
-                jsx: JsxEmit.React
+                compiler: {
+                    jsx: JsxEmit.React
+                }
             }
         }, (errors, actual) => {
             test.same(errors.length, 0);

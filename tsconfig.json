@@ -2,13 +2,13 @@
   "compilerOptions": {
     "module": "commonjs",
     "target": "ES6",
-    "declaration": true,
     "outDir": "dist",
     "noImplicitAny": true,
-    "jsx": "react"
+    "jsx": "react",
+    "incremental": true
   },
   "include": [
-    "src/index.ts"
+    "test/tsify/incremental/main.ts"
   ],
   "exclude": [
     "node_modules"

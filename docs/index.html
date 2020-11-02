@@ -79,7 +79,7 @@
 <span class="hljs-keyword">import</span> tsify <span class="hljs-keyword">from</span> <span class="hljs-string">&quot;tsify&quot;</span>;
 
 <span class="hljs-keyword">let</span> browserify = Browserify()
-    .add(<span class="hljs-string">&#x27;main.ts&#x27;</span>)
+    .add(<span class="hljs-string">&#x27;syntax.ts&#x27;</span>)
     .plugin(tsify, {})
     .bundle()
     .pipe(process.stdout);

@@ -1,5 +1,5 @@
 import {DiagnosticCategory, getLineAndCharacterOfPosition, flattenDiagnosticMessageText} from "typescript";
-import type {Diagnostic, DiagnosticWithLocation} from "typescript";
+import type {DiagnosticWithLocation} from "typescript";
 import {EOL} from "os";
 
 export class Error extends SyntaxError {
@@ -7,8 +7,9 @@ export class Error extends SyntaxError {
     private readonly _line: number;
     private readonly _column: number;
 
-    constructor(diagnostic: Diagnostic | DiagnosticWithLocation) {
+    constructor(diagnostic: DiagnosticWithLocation) {
         const category = DiagnosticCategory[diagnostic.category];
+        const location = getLineAndCharacterOfPosition(diagnostic.file, diagnostic.start);
 
         let fileName: string;
         let line: number;
@@ -16,16 +17,11 @@ export class Error extends SyntaxError {
 
         let message = category + ' TypeScript' + diagnostic.code + ': ' + flattenDiagnosticMessageText(diagnostic.messageText, EOL);
 
-        if (diagnostic.file) {
-            const location = getLineAndCharacterOfPosition(diagnostic.file, diagnostic.start);
-            const category = DiagnosticCategory[diagnostic.category];
+        fileName = diagnostic.file.fileName;
+        line = location.line + 1;
+        column = location.character + 1;
 
-            fileName = diagnostic.file.fileName;
-            line = location.line + 1;
-            column = location.character + 1;
-
-            message += fileName + '(' + line + ',' + column + '): ' + category + ' TypeScript' + diagnostic.code + ': ' + flattenDiagnosticMessageText(diagnostic.messageText, EOL);
-        }
+        message += fileName + '(' + line + ',' + column + '): ' + category + ' TypeScript' + diagnostic.code + ': ' + flattenDiagnosticMessageText(diagnostic.messageText, EOL);
 
         super(message);
 

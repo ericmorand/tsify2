@@ -2,32 +2,24 @@ import {Error as CompileError} from "./Error";
 import {Host} from "./Host";
 import {normalize as normalizePath, relative as relativePath} from "path";
 import {EventEmitter} from "events";
-import {EmitResult, JsxEmit, ModuleKind} from "typescript";
+import {EmitAndSemanticDiagnosticsBuilderProgram, EmitResult, JsxEmit} from "typescript";
 import {Transform, PassThrough} from "stream";
 import {fromComment, commentRegex} from "convert-source-map";
-import {Options as BrowserifyOptions} from "browserify";
 
 import type {CompilerOptions, Program, Diagnostic, DiagnosticWithLocation} from "typescript";
 import type {TransformCallback} from "stream";
+import type {Options as BrowserifyOptions, CustomOptions} from "browserify";
+
+export type TransformOptions = CustomOptions & {
+    global: boolean
+};
 
 export class Tsifier extends EventEmitter {
-    private _ignoredFiles: Array<string>;
     private readonly _host: Host;
-    private readonly _files: Array<string>;
     private readonly _options: CompilerOptions;
-    private readonly _browserifyOptions: BrowserifyOptions;
 
-    constructor(options: CompilerOptions, browserifyOptions?: BrowserifyOptions) {
+    constructor(options: CompilerOptions) {
         super();
-
-        this._ignoredFiles = [];
-        this._browserifyOptions = browserifyOptions;
-        this._files = [];
-
-        options.sourceMap = false;
-        options.inlineSourceMap = browserifyOptions && browserifyOptions.debug;
-        options.inlineSources = browserifyOptions && browserifyOptions.debug;
-        options.module = options.module || ModuleKind.CommonJS;
 
         this._options = options;
         this._host = new Host(options);
@@ -37,15 +29,9 @@ export class Tsifier extends EventEmitter {
         });
     }
 
-    reset() {
-        this._ignoredFiles = [];
-        this._host.reset();
-        this.addFiles(this._files);
-    }
-
     addFiles(files: Array<string>) {
         for (let file of files) {
-            this._host.addFile(file, true);
+            this._host.addFile(file);
         }
     }
 
@@ -69,39 +55,35 @@ export class Tsifier extends EventEmitter {
         return (/\.jsx?$/i).test(file);
     };
 
-    generateCache(files: Array<string>, ignoredFiles?: Array<string>): void {
-        if (ignoredFiles) {
-            this._ignoredFiles = ignoredFiles;
-        }
-
-        this.addFiles(files);
-        this.compile();
-    };
-
     compile() {
-        const program = this._host.compile(this._options);
-        const syntaxDiagnostics = this.checkSyntax(program);
+        console.time('create p');
+        const program = this._host.createProgram(this._options);
+        console.timeEnd('create p')
+        // const syntaxDiagnostics = this.checkSyntax(program);
+        //
+        // if (syntaxDiagnostics.length) {
+        //     return;
+        // }
+        //
+        // const semanticDiagnostics = this.checkSemantics(program);
+        //
+        // if (semanticDiagnostics.length && this._options.noEmitOnError) {
+        //     return;
+        // }
 
-        if (syntaxDiagnostics.length) {
-            return;
-        }
-
-        const semanticDiagnostics = this.checkSemantics(program);
-
-        if (semanticDiagnostics.length && this._options.noEmitOnError) {
-            return;
-        }
-
+        console.time('emit');
         const emitOutput = program.emit();
+        console.timeEnd('emit');
+        console.log(emitOutput);
 
-        const emittedDiagnostics = this.checkEmittedOutput(emitOutput);
-
-        if (emittedDiagnostics.length && this._options.noEmitOnError) {
-            return;
-        }
+        // const emittedDiagnostics = this.checkEmittedOutput(emitOutput);
+        //
+        // if (emittedDiagnostics.length && this._options.noEmitOnError) {
+        //     return;
+        // }
     };
 
-    checkSyntax(program: Program): readonly DiagnosticWithLocation[] {
+    checkSyntax(program: EmitAndSemanticDiagnosticsBuilderProgram): readonly DiagnosticWithLocation[] {
         const syntaxDiagnostics = program.getSyntacticDiagnostics();
 
         for (let diagnostic of syntaxDiagnostics) {
@@ -115,7 +97,7 @@ export class Tsifier extends EventEmitter {
         return syntaxDiagnostics;
     };
 
-    checkSemantics(program: Program): readonly Diagnostic[] {
+    checkSemantics(program: EmitAndSemanticDiagnosticsBuilderProgram): readonly Diagnostic[] {
         let semanticDiagnostics = program.getGlobalDiagnostics();
 
         if (semanticDiagnostics.length === 0) {
@@ -147,15 +129,13 @@ export class Tsifier extends EventEmitter {
         return emittedDiagnostics;
     };
 
-    transform(file: string) {
+    transform(file: string): Transform {
+        console.time('TRANS');
+
         const host = this._host;
 
-        const getCompiledFile = (file: string): Buffer => {
+        const getCompiledFile = (file: string): string => {
             return this.getCompiledFile(file);
-        }
-
-        if (this._ignoredFiles.indexOf(file) !== -1) {
-            return new PassThrough();
         }
 
         if (this.isTypescriptDeclaration(file)) {
@@ -176,6 +156,7 @@ export class Tsifier extends EventEmitter {
                         callback();
                         return;
                     }
+                    console.timeEnd('TRANS');
 
                     const compiled = getCompiledFile(file);
 
@@ -193,7 +174,7 @@ export class Tsifier extends EventEmitter {
         return new PassThrough();
     };
 
-    getCompiledFile(inputFile: string, alreadyMissedCache: boolean = false): Buffer {
+    getCompiledFile(inputFile: string, alreadyMissedCache: boolean = false): string {
         const outputExtension = (this._options.jsx === JsxEmit.Preserve && this.isTsx(inputFile)) ? '.jsx' : '.js';
 
         let output = this._host.output(this.replaceFileExtension(inputFile, outputExtension));
@@ -204,7 +185,9 @@ export class Tsifier extends EventEmitter {
                 return;
             }
 
-            this.generateCache([inputFile]);
+            console.time('COMPILE');
+            this.compile();
+            console.timeEnd('COMPILE');
 
             if (this._host.hasError) {
                 return;
@@ -220,18 +203,16 @@ export class Tsifier extends EventEmitter {
         return output;
     };
 
-    setSourcePathInSourcemap(output: Buffer, inputFile: string): Buffer {
-        const outputAsString: string = output.toString();
-
+    setSourcePathInSourcemap(output: string, inputFile: string): string {
         const normalized = normalizePath(relativePath(
-            this._browserifyOptions.basedir || process.cwd(),
+            process.cwd(),
             inputFile
         ));
 
-        const sourcemap = fromComment(outputAsString);
+        const sourcemap = fromComment(output);
 
         sourcemap.setProperty('sources', [normalized]);
 
-        return Buffer.from(outputAsString.replace(commentRegex, sourcemap.toComment()));
+        return output.replace(commentRegex, sourcemap.toComment());
     }
 }

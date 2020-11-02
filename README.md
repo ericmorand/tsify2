@@ -15,7 +15,7 @@ import * as Browserify from "browserify";
 import tsify from "tsify";
 
 let browserify = Browserify()
-    .add('main.ts')
+    .add('syntax.ts')
     .plugin(tsify, {})
     .bundle()
     .pipe(process.stdout);
